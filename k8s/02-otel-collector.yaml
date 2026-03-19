@@ -83,10 +83,10 @@ spec:
           mountPath: /etc/otelcol
         resources:
           requests:
-            memory: "256Mi"
+            memory: "32Mi"
             cpu: "100m"
           limits:
-            memory: "512Mi"
+            memory: "64Mi"
             cpu: "500m"
         readinessProbe:
           httpGet:
