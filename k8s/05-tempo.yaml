@@ -33,7 +33,7 @@ data:
 
     ingester:
       trace_idle_period: 30s
-      max_block_bytes: 1024
+      max_block_bytes: 100000000
       max_block_duration: 5m
 
     compactor:
@@ -60,6 +60,8 @@ metadata:
     app: tempo
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: tempo
