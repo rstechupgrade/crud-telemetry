@@ -275,7 +275,7 @@ def create_onboarding():
                 RETURNING id
             """
             params = (
-                data.get("last_name"), data.get("first_name"), data.get("date_of_birth"),
+                data.get("first_name"), data.get("last_name"), data.get("date_of_birth"),
                 data.get("ssn_tax_id"), data.get("citizenship"), data.get("marital_status"),
                 data.get("address_street"), data.get("address_city"),
                 data.get("address_state"), data.get("address_zip"),
