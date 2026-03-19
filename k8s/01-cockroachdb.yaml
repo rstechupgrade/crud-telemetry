@@ -40,7 +40,7 @@ spec:
         args:
         - start-single-node
         - --insecure
-        - --store=path=/cockroach/cockroach-data
+        - --store=path=/cockroach/wrong-path
         - --listen-addr=:26257
         - --http-addr=:8080
         volumeMounts:
