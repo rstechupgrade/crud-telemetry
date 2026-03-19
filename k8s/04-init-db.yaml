@@ -53,6 +53,7 @@ spec:
               primary_investment_goal STRING,
               account_type STRING,
               preferred_communication STRING,
+              account_status STRING NOT NULL DEFAULT 'Active',
               application_status STRING DEFAULT 'Pending Review',
               created_at TIMESTAMP DEFAULT now(),
               updated_at TIMESTAMP DEFAULT now()

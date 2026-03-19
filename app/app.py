@@ -132,7 +132,7 @@ ALLOWED_UPDATE_FIELDS = {
     'marital_status', 'address_street', 'address_city', 'address_state', 'address_zip',
     'phone_number', 'email_address', 'occupation', 'employer_name', 'annual_income',
     'investment_horizon', 'risk_tolerance', 'primary_investment_goal',
-    'account_type', 'preferred_communication', 'application_status'
+    'account_type', 'preferred_communication', 'application_status', 'account_status'
 }
 
 
@@ -270,8 +270,8 @@ def create_onboarding():
                  marital_status, address_street, address_city, address_state, address_zip,
                  phone_number, email_address, occupation, employer_name, annual_income,
                  investment_horizon, risk_tolerance, primary_investment_goal,
-                 account_type, preferred_communication)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 account_type, preferred_communication, account_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """
             params = (
@@ -283,7 +283,8 @@ def create_onboarding():
                 data.get("employer_name"), data.get("annual_income"),
                 data.get("investment_horizon"), data.get("risk_tolerance"),
                 data.get("primary_investment_goal"), data.get("account_type"),
-                data.get("preferred_communication")
+                data.get("preferred_communication"),
+                data.get("account_status", "Active")
             )
             
             start = time.perf_counter()
