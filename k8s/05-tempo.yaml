@@ -33,7 +33,7 @@ data:
 
     ingester:
       trace_idle_period: 30s
-      max_block_bytes: 52428800
+      max_block_bytes: 1024
       max_block_duration: 5m
 
     compactor:
