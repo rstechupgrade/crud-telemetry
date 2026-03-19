@@ -23,7 +23,7 @@ env:
 jobs:
   build-and-push:
     name: Build & Push Image
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aks-vm]
     outputs:
       image_tag: ${{ steps.meta.outputs.tag }}
     steps:
@@ -57,7 +57,7 @@ jobs:
   deploy:
     name: Deploy to AKS
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aks-vm]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -139,7 +139,7 @@ jobs:
   validate:
     name: Validate Deployment
     needs: deploy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aks-vm]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -157,11 +157,6 @@ jobs:
             --resource-group "$AKS_RESOURCE_GROUP" \
             --name "$AKS_CLUSTER_NAME" \
             --overwrite-existing
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
       - name: Run CRUD API tests
         id: api_tests
