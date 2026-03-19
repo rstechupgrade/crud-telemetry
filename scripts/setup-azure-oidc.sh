@@ -17,8 +17,8 @@ source "$SCRIPT_DIR/config.sh"
 
 # --- Configuration ---
 APP_DISPLAY_NAME="github-crud-telemetry-cicd"
-GITHUB_ORG=""        # <-- Set your GitHub org or username
-GITHUB_REPO=""       # <-- Set your GitHub repo name
+GITHUB_ORG="rstechupgrade"
+GITHUB_REPO="crud-telemetry"
 AKS_CLUSTER="tipaks2"
 AKS_RG="infrastructure"
 
