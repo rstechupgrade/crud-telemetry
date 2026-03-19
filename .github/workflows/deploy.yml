@@ -1,0 +1,212 @@
+name: Build, Deploy & Validate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "k8s/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
+  IMAGE_NAME: wmclientapp
+  AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+  AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+  NAMESPACE: crud-telemetry
+
+jobs:
+  build-and-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name $(echo "$ACR_REGISTRY" | cut -d'.' -f1)
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        working-directory: app
+        run: |
+          IMAGE="${ACR_REGISTRY}/${IMAGE_NAME}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
+          docker push "${IMAGE}:${TAG}"
+          docker push "${IMAGE}:latest"
+          echo "Pushed ${IMAGE}:${TAG}"
+
+  deploy:
+    name: Deploy to AKS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "$AKS_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --overwrite-existing
+
+      - name: Deploy namespace
+        run: kubectl apply -f k8s/00-namespace.yaml
+
+      - name: Deploy CockroachDB
+        run: |
+          kubectl apply -f k8s/01-cockroachdb.yaml
+          kubectl wait --for=condition=available deployment/cockroachdb \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Initialize database
+        run: |
+          kubectl delete job init-cockroachdb -n $NAMESPACE --ignore-not-found
+          kubectl apply -f k8s/04-init-db.yaml
+          kubectl wait --for=condition=complete job/init-cockroachdb \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Deploy Tempo
+        run: |
+          kubectl apply -f k8s/05-tempo.yaml
+          kubectl wait --for=condition=available deployment/tempo \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Deploy Loki
+        run: |
+          kubectl apply -f k8s/06-loki.yaml
+          kubectl wait --for=condition=available deployment/loki \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Deploy Promtail
+        run: kubectl apply -f k8s/07-promtail.yaml
+
+      - name: Deploy Grafana
+        run: |
+          kubectl apply -f k8s/08-grafana.yaml
+          kubectl wait --for=condition=available deployment/grafana \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Deploy OTel Collector
+        run: |
+          kubectl apply -f k8s/02-otel-collector.yaml
+          kubectl wait --for=condition=available deployment/otel-collector \
+            -n $NAMESPACE --timeout=60s
+
+      - name: Deploy Application
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          sed "s|\${ACR_REGISTRY}|${ACR_REGISTRY}|g; s|\${IMAGE_TAG}|${IMAGE_TAG}|g" \
+            k8s/03-app.yaml | kubectl apply -f -
+          kubectl wait --for=condition=available deployment/wmclientapp \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Verify all pods
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n $NAMESPACE
+          echo ""
+          echo "=== Services ==="
+          kubectl get svc -n $NAMESPACE
+
+  validate:
+    name: Validate Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "$AKS_RESOURCE_GROUP" \
+            --name "$AKS_CLUSTER_NAME" \
+            --overwrite-existing
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run CRUD API tests
+        id: api_tests
+        run: |
+          python3 tests/test_api_crud.py 2>&1 | tee /tmp/test_output.txt
+          # Extract a trace ID for telemetry validation
+          TRACE_ID=$(grep "Create:" /tmp/test_output.txt | awk '{print $NF}')
+          echo "trace_id=${TRACE_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for telemetry pipeline
+        run: sleep 15
+
+      - name: Validate end-to-end telemetry
+        run: |
+          TRACE_ID="${{ steps.api_tests.outputs.trace_id }}"
+          if [ -z "$TRACE_ID" ]; then
+            echo "No trace ID captured, skipping telemetry validation"
+            exit 0
+          fi
+          echo "Validating telemetry for trace: ${TRACE_ID}"
+          python3 tests/fetch_telemetry.py --trace-id "$TRACE_ID" 2>&1 | tee /tmp/telemetry_output.txt
+
+          # Verify Tempo returned a trace
+          if grep -q "Trace found" /tmp/telemetry_output.txt; then
+            echo "Tempo: PASS"
+          else
+            echo "Tempo: FAIL - trace not found"
+            exit 1
+          fi
+
+          # Verify Loki returned logs
+          if grep -q "Found .* log entries" /tmp/telemetry_output.txt; then
+            echo "Loki: PASS"
+          else
+            echo "Loki: FAIL - no logs found"
+            exit 1
+          fi
+
+          # Verify CockroachDB logs
+          if grep -q "Found .* CockroachDB log entries" /tmp/telemetry_output.txt; then
+            echo "CockroachDB: PASS"
+          else
+            echo "CockroachDB: FAIL - no DB logs found"
+            exit 1
+          fi
+
+          echo ""
+          echo "All telemetry validations passed!"

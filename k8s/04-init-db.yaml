@@ -1,0 +1,69 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-cockroachdb
+  namespace: crud-telemetry
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init
+        image: cockroachdb/cockroach:v23.2.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for CockroachDB to be ready..."
+          until /cockroach/cockroach sql --insecure --host=cockroachdb:26257 -e "SELECT 1"; do
+            echo "Waiting..."
+            sleep 5
+          done
+          
+          echo "Creating database and user..."
+          /cockroach/cockroach sql --insecure --host=cockroachdb:26257 -e "
+          CREATE DATABASE IF NOT EXISTS onboarding_db;
+          CREATE USER IF NOT EXISTS roach;
+          GRANT ALL ON DATABASE onboarding_db TO roach;
+          "
+          
+          echo "Creating table..."
+          /cockroach/cockroach sql --insecure --host=cockroachdb:26257 --database=onboarding_db -e "
+          CREATE TABLE IF NOT EXISTS client_onboarding (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              first_name STRING,
+              last_name STRING,
+              date_of_birth STRING,
+              ssn_tax_id STRING,
+              citizenship STRING,
+              marital_status STRING,
+              address_street STRING,
+              address_city STRING,
+              address_state STRING,
+              address_zip STRING,
+              phone_number STRING,
+              email_address STRING UNIQUE,
+              occupation STRING,
+              employer_name STRING,
+              annual_income DECIMAL,
+              investment_horizon STRING,
+              risk_tolerance STRING,
+              primary_investment_goal STRING,
+              account_type STRING,
+              preferred_communication STRING,
+              application_status STRING DEFAULT 'Pending Review',
+              created_at TIMESTAMP DEFAULT now(),
+              updated_at TIMESTAMP DEFAULT now()
+          );
+          GRANT ALL ON TABLE client_onboarding TO roach;
+          "
+          
+          echo "Enabling SQL logging for tracing..."
+          /cockroach/cockroach sql --insecure --host=cockroachdb:26257 -e "
+          SET CLUSTER SETTING sql.log.all_statements.enabled = true;
+          SET CLUSTER SETTING trace.opentelemetry.collector = 'otel-collector.crud-telemetry.svc.cluster.local:4317';
+          "
+          
+          echo "Database initialization complete!"

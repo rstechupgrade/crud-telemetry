@@ -1,0 +1,90 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cockroachdb-data
+  namespace: crud-telemetry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cockroachdb
+  namespace: crud-telemetry
+  labels:
+    app: cockroachdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cockroachdb
+  template:
+    metadata:
+      labels:
+        app: cockroachdb
+    spec:
+      containers:
+      - name: cockroachdb
+        image: cockroachdb/cockroach:v23.2.0
+        ports:
+        - containerPort: 26257
+          name: sql
+        - containerPort: 8080
+          name: http
+        command: ["/cockroach/cockroach"]
+        args:
+        - start-single-node
+        - --insecure
+        - --store=path=/cockroach/cockroach-data
+        - --listen-addr=:26257
+        - --http-addr=:8080
+        volumeMounts:
+        - name: datadir
+          mountPath: /cockroach/cockroach-data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /health?ready=1
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: datadir
+        persistentVolumeClaim:
+          claimName: cockroachdb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroachdb
+  namespace: crud-telemetry
+  labels:
+    app: cockroachdb
+spec:
+  selector:
+    app: cockroachdb
+  ports:
+  - port: 26257
+    targetPort: 26257
+    name: sql
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP

@@ -1,0 +1,75 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wmclientapp
+  namespace: crud-telemetry
+  labels:
+    app: wmclientapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wmclientapp
+  template:
+    metadata:
+      labels:
+        app: wmclientapp
+    spec:
+      containers:
+      - name: wmclientapp
+        image: ${ACR_REGISTRY}/wmclientapp:${IMAGE_TAG}
+        ports:
+        - containerPort: 5000
+        env:
+        - name: DB_HOST
+          value: "cockroachdb"
+        - name: DB_PORT
+          value: "26257"
+        - name: DB_USER
+          value: "roach"
+        - name: DB_NAME
+          value: "onboarding_db"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "wmclientapp"
+        - name: SERVICE_VERSION
+          value: "1.0.0"
+        - name: ENVIRONMENT
+          value: "production"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wmclientapp
+  namespace: crud-telemetry
+  labels:
+    app: wmclientapp
+spec:
+  selector:
+    app: wmclientapp
+  ports:
+  - port: 5000
+    targetPort: 5000
+    name: http
+  type: ClusterIP

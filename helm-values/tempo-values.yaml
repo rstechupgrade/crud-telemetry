@@ -1,0 +1,52 @@
+# Tempo Distributed Helm Values
+# Install with: helm install tempo grafana/tempo-distributed -f tempo-values.yaml -n observability
+
+global:
+  image:
+    registry: docker.io
+
+traces:
+  otlp:
+    grpc:
+      enabled: true
+    http:
+      enabled: true
+
+distributor:
+  replicas: 1
+  extraArgs:
+    - -config.expand-env=true
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+
+querier:
+  replicas: 1
+
+queryFrontend:
+  replicas: 1
+
+compactor:
+  replicas: 1
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+# Enable OTLP service
+service:
+  type: ClusterIP
