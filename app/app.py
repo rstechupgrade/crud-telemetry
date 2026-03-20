@@ -416,7 +416,6 @@ def update_onboarding(client_id):
             
             # Build dynamic UPDATE
             fields = [f"{k} = %s" for k in data.keys()]
-            fields.append("updated_at = now()")
             values = list(data.values()) + [client_id]
             
             sql = f"UPDATE client_onboarding SET {', '.join(fields)} WHERE id = %s"
