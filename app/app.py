@@ -230,19 +230,28 @@ def root():
     })
 
 
+@app.route("/livez")
+def liveness():
+    """Lightweight liveness probe - no external dependencies."""
+    return jsonify({"status": "alive"})
+
+
 @app.route("/healthz")
 def health():
     """Health check endpoint with database connectivity test."""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT 1")
         cur.close()
-        conn.close()
         return jsonify({"status": "healthy", "database": "connected"})
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({"status": "unhealthy", "error": str(e)}), 503
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route("/onboarding", methods=["POST"])
@@ -260,6 +269,7 @@ def create_onboarding():
         span.set_attribute(SpanAttributes.DB_NAME, DB_NAME)
         span.set_attribute(SpanAttributes.DB_OPERATION, "INSERT")
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -297,7 +307,6 @@ def create_onboarding():
             span.set_attribute("db.client_id", client_id)
             
             cur.close()
-            conn.close()
             
             logger.info(f"Created onboarding: {client_id}")
             return jsonify({"message": "onboarding submitted", "client_id": client_id}), 201
@@ -307,6 +316,9 @@ def create_onboarding():
             span.record_exception(e)
             logger.error(f"Insert failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 @app.route("/onboarding/<client_id>", methods=["GET"])
@@ -318,6 +330,7 @@ def get_onboarding(client_id):
         span.set_attribute(SpanAttributes.DB_OPERATION, "SELECT")
         span.set_attribute("client.id", client_id)
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -331,7 +344,6 @@ def get_onboarding(client_id):
             span.set_attribute("db.found", row is not None)
             
             cur.close()
-            conn.close()
             
             if not row:
                 return jsonify({"error": "Not found"}), 404
@@ -344,6 +356,9 @@ def get_onboarding(client_id):
             span.record_exception(e)
             logger.error(f"Select failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 @app.route("/onboarding", methods=["GET"])
@@ -359,6 +374,7 @@ def get_onboarding_by_email():
         span.set_attribute(SpanAttributes.DB_OPERATION, "SELECT")
         span.set_attribute("query.email", email)
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -372,7 +388,6 @@ def get_onboarding_by_email():
             span.set_attribute("db.found", row is not None)
             
             cur.close()
-            conn.close()
             
             if not row:
                 return jsonify({"error": "Not found"}), 404
@@ -385,6 +400,9 @@ def get_onboarding_by_email():
             span.record_exception(e)
             logger.error(f"Select by email failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 @app.route("/onboarding/<client_id>", methods=["PUT"])
@@ -410,6 +428,7 @@ def update_onboarding(client_id):
         span.set_attribute("client.id", client_id)
         span.set_attribute("db.fields_updated", len(data))
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -418,7 +437,7 @@ def update_onboarding(client_id):
             fields = [f"{k} = %s" for k in data.keys()]
             values = list(data.values()) + [client_id]
             
-            sql = f"UPDATE client_onboarding SET {', '.join(fields)} WHERE id = %s"
+            sql = f"UPDATE client_onboarding SET {', '.join(fields)}, updated_at = now() WHERE id = %s"
             
             start = time.perf_counter()
             cur.execute(sql, values)
@@ -430,7 +449,6 @@ def update_onboarding(client_id):
             span.set_attribute("db.rows_affected", rows_affected)
             
             cur.close()
-            conn.close()
             
             if rows_affected == 0:
                 return jsonify({"error": "Not found"}), 404
@@ -443,6 +461,9 @@ def update_onboarding(client_id):
             span.record_exception(e)
             logger.error(f"Update failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 @app.route("/onboarding/<client_id>", methods=["DELETE"])
@@ -454,6 +475,7 @@ def delete_onboarding(client_id):
         span.set_attribute(SpanAttributes.DB_OPERATION, "DELETE")
         span.set_attribute("client.id", client_id)
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -468,7 +490,6 @@ def delete_onboarding(client_id):
             span.set_attribute("db.rows_affected", rows_affected)
             
             cur.close()
-            conn.close()
             
             if rows_affected == 0:
                 return jsonify({"error": "Not found"}), 404
@@ -481,6 +502,9 @@ def delete_onboarding(client_id):
             span.record_exception(e)
             logger.error(f"Delete failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 @app.route("/onboarding/list", methods=["GET"])
@@ -496,6 +520,7 @@ def list_onboardings():
         span.set_attribute("db.limit", limit)
         span.set_attribute("db.offset", offset)
         
+        conn = None
         try:
             conn = get_db_connection()
             cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -512,7 +537,6 @@ def list_onboardings():
             span.set_attribute("db.results_count", len(rows))
             
             cur.close()
-            conn.close()
             
             results = [serialize_row(dict(row)) for row in rows]
             
@@ -524,6 +548,9 @@ def list_onboardings():
             span.record_exception(e)
             logger.error(f"List failed: {e}")
             return jsonify({"error": str(e)}), 500
+        finally:
+            if conn:
+                conn.close()
 
 
 # ============================================================================

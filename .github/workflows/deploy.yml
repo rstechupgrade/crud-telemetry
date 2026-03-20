@@ -85,17 +85,23 @@ jobs:
           kubectl wait --for=condition=available deployment/cockroachdb \
             -n $NAMESPACE --timeout=120s
 
+      - name: Deploy Tempo
+        run: |
+          kubectl apply -f k8s/05-tempo.yaml
+          kubectl wait --for=condition=available deployment/tempo \
+            -n $NAMESPACE --timeout=120s
+
+      - name: Deploy OTel Collector
+        run: |
+          kubectl apply -f k8s/02-otel-collector.yaml
+          kubectl wait --for=condition=available deployment/otel-collector \
+            -n $NAMESPACE --timeout=60s
+
       - name: Initialize database
         run: |
           kubectl delete job init-cockroachdb -n $NAMESPACE --ignore-not-found
           kubectl apply -f k8s/04-init-db.yaml
           kubectl wait --for=condition=complete job/init-cockroachdb \
-            -n $NAMESPACE --timeout=120s
-
-      - name: Deploy Tempo
-        run: |
-          kubectl apply -f k8s/05-tempo.yaml
-          kubectl wait --for=condition=available deployment/tempo \
             -n $NAMESPACE --timeout=120s
 
       - name: Deploy Loki
@@ -112,12 +118,6 @@ jobs:
           kubectl apply -f k8s/08-grafana.yaml
           kubectl wait --for=condition=available deployment/grafana \
             -n $NAMESPACE --timeout=120s
-
-      - name: Deploy OTel Collector
-        run: |
-          kubectl apply -f k8s/02-otel-collector.yaml
-          kubectl wait --for=condition=available deployment/otel-collector \
-            -n $NAMESPACE --timeout=60s
 
       - name: Deploy Application
         env:

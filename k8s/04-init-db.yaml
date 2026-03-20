@@ -31,7 +31,7 @@ spec:
           
           echo "Creating table..."
           /cockroach/cockroach sql --insecure --host=cockroachdb:26257 --database=onboarding_db -e "
-          CREATE TABLE client_onboarding (
+          CREATE TABLE IF NOT EXISTS client_onboarding (
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               first_name STRING,
               last_name STRING,
